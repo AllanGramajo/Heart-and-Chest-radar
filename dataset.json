@@ -1,0 +1,6 @@
+{
+  "filename": "231026_userI_tripod_01_5.csv",
+  "ref": "master",
+  "zenodo_record_id": "15022885",
+  "note": "The workflow resolves master to a commit and downloads that immutable snapshot. The commit and SHA-256 are embedded. Set ref to that 40-character commit to pin future builds as well."
+}
