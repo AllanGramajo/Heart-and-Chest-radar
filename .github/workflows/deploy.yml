@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: Check out website source
         uses: actions/checkout@v6
+      - name: Assemble website
+        run: python3 assemble_site.py
       - name: Run packaging tests (synthetic software fixtures only)
         run: python3 -m unittest discover -s tests -v
       - name: Verify public source, embed recording, and build website
@@ -34,6 +36,7 @@ jobs:
 
   deploy:
     needs: build
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
