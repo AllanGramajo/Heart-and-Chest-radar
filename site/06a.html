@@ -1,0 +1,49 @@
+<script>
+(()=>{'use strict';
+const $=id=>document.getElementById(id),TAU=2*Math.PI;
+const P=Object.freeze({c:3e8,f:62e9,B:4e9,chest:.35,hz:.25});
+const lambdaMM=P.c/P.f*1000,rangeMM=P.c/(2*P.B)*1000,phase=d=>4*Math.PI*d/lambdaMM,wrap=p=>Math.atan2(Math.sin(p),Math.cos(p));
+const footprint=(r,n)=>2*r*Math.tan(1/n),patches=(r,n)=>P.chest/footprint(r,n),twoPatch=n=>P.chest/(4*Math.tan(1/n));
+const fixed=(v,n=1)=>(Math.abs(v)<.5*10**-n?0:v).toFixed(n),clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const C={fg:'#e8e8e8',muted:'#8a8a8a',line:'#303030',bg:'#0b0b0b',red:'#ba0c2f'};
+const font='system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',mono='ui-monospace,SFMono-Regular,Consolas,monospace';
+const S={index:0,deck:false,paused:matchMedia('(prefers-reduced-motion: reduce)').matches,depth:6,distance:.5,elements:8,restriction:.2,noise:.08,seed:48506850,time:0,heroTime:0,motionTime:0,motionRun:false,motionShown:false};
+const canvasNames=['phaseCanvas','spaceCanvas','motionCanvas','mapCanvas','curveCanvas'],canvases={};
+for(const id of canvasNames){const canvas=$(id);canvases[id]={canvas,ctx:canvas.getContext('2d'),w:0,h:0};}
+function resize(){for(const s of Object.values(canvases)){const w=s.canvas.clientWidth,h=s.canvas.clientHeight;if(!w||!h)continue;const dpr=Math.min(devicePixelRatio||1,2);s.w=w;s.h=h;s.canvas.width=Math.round(w*dpr);s.canvas.height=Math.round(h*dpr);s.ctx.setTransform(dpr,0,0,dpr,0,0);}drawVisible();schedule();}
+function surf(id){const s=canvases[id];s.ctx.clearRect(0,0,s.w,s.h);return s;}
+function txt(ctx,str,x,y,size=16,color=C.muted,align='left',fixedFont=false){ctx.font=`${size}px ${fixedFont?mono:font}`;ctx.fillStyle=color;ctx.textAlign=align;ctx.textBaseline='alphabetic';ctx.fillText(str,x,y);}
+function line(ctx,x1,y1,x2,y2,color=C.line,width=1,dash=[]){ctx.beginPath();ctx.strokeStyle=color;ctx.lineWidth=width;ctx.setLineDash(dash);ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();ctx.setLineDash([]);}
+function path(ctx,pts,color,width=2,dash=[]){if(!pts.length)return;ctx.beginPath();ctx.strokeStyle=color;ctx.lineWidth=width;ctx.setLineDash(dash);pts.forEach((p,i)=>i?ctx.lineTo(...p):ctx.moveTo(...p));ctx.stroke();ctx.setLineDash([]);}
+function dot(ctx,x,y,r,color){ctx.fillStyle=color;ctx.beginPath();ctx.arc(x,y,r,0,TAU);ctx.fill();}
+function labelBracket(ctx,x1,x2,y,str){line(ctx,x1,y,x2,y,C.muted);line(ctx,x1,y-5,x1,y+5,C.muted);line(ctx,x2,y-5,x2,y+5,C.muted);txt(ctx,str,(x1+x2)/2,y-11,16,C.muted,'center');}
+const breath=(t,depth=S.depth)=>depth/2*Math.sin(TAU*P.hz*t);
+/* Phase recovery actually uses I=cos(phi), Q=sin(phi), atan2, and successive
+   principal phase differences. The initial displacement is calibrated to truth. */
+function recovery(depth=6,fs=120,duration=12,withShift=false){const out=[],n=Math.round(fs*duration);let prev=0,unwrapped=0,maxStep=0,sum=0,slips=0,priorX=0;
+ for(let i=0;i<=n;i++){const t=i/fs,u=clamp((t-4)/.5,0,1),shift=withShift?20*u*u*(3-2*u):0,x=breath(t,depth)+shift,I=Math.cos(phase(x)),Q=Math.sin(phase(x)),p=Math.atan2(Q,I);if(i){unwrapped+=wrap(p-prev);const dx=Math.abs(x-priorX);maxStep=Math.max(maxStep,dx);if(dx>=lambdaMM/4)slips++;}else unwrapped=phase(x);prev=p;priorX=x;const y=unwrapped*lambdaMM/(4*Math.PI),err=y-x;sum+=err*err;out.push({t,x,y,error:err,I,Q,wrapped:p});}
+ return {fs,points:out,rmse:Math.sqrt(sum/out.length),finalError:out.at(-1).error,maxStep,unsafeSteps:slips};}
+let phaseTrace=recovery(),slow=recovery(6,20,12,true),fast=recovery(6,120,12,true);
+function drawPhase(){const {ctx,w,h}=surf('phaseCanvas'),x=breath(S.time),p=phase(x),cx=w*.83,cy=92,rad=64,base=w*.43,shift=x*7.5,rx=96;
+ ctx.fillStyle='#151515';ctx.fillRect(base-140,28,280,127);line(ctx,base-140,25,base-140,160,C.muted,1,[4,4]);line(ctx,base+140,25,base+140,160,C.muted,1,[4,4]);labelBracket(ctx,base-140,base+140,24,'3.75 cm range bin');
+ ctx.strokeStyle=C.fg;ctx.lineWidth=2;ctx.strokeRect(rx-22,73,44,35);txt(ctx,'Radar',rx,139,17,C.fg,'center');
+ for(let k=0;k<3;k++){const t=(S.time*.35+k/3)%1,xx=rx+30+(base-rx-70)*t;ctx.beginPath();ctx.strokeStyle='#555';ctx.arc(xx,91,16+15*t,-.8,.8);ctx.stroke();}
+ const front=base+shift;path(ctx,[[front+55,39],[front+20,54],[front,78],[front-5,107],[front+6,132],[front+47,151]],C.fg,3);line(ctx,rx+23,92,front-8,92,C.red,1.5,[6,5]);txt(ctx,`${fixed(x,2)} mm`,base,183,17,C.fg,'center',true);
+ ctx.beginPath();ctx.strokeStyle='#777';ctx.lineWidth=1.2;ctx.arc(cx,cy,rad,0,TAU);ctx.stroke();line(ctx,cx-rad-10,cy,cx+rad+10,cy);line(ctx,cx,cy-rad-10,cx,cy+rad+10);const px=cx+rad*Math.cos(p),py=cy-rad*Math.sin(p);line(ctx,cx,cy,px,py,C.red,2.7);dot(ctx,px,py,4,C.red);txt(ctx,'I',cx+rad+18,cy+5,16,C.muted);txt(ctx,'Q',cx,cy-rad-16,16,C.muted,'center');txt(ctx,'Wrapped phase',cx,184,16,C.muted,'center');
+ const l=52,r=w-28,top=215,bottom=h-27,Y=v=>(top+bottom)/2-v*(bottom-top)/14;[-6,0,6].forEach(v=>{line(ctx,l,Y(v),r,Y(v));txt(ctx,`${v}`,l-15,Y(v)+5,14,C.muted,'right',true);});txt(ctx,'mm',4,212,13,C.muted);const pts=[];
+ // Reconstruct a rolling noise-free trace from phase samples, not a painted target sine.
+ let prev=0,unwrapped=0;for(let i=0;i<=1440;i++){const t=S.time-12+i/120,v=breath(t),q=Math.atan2(Math.sin(phase(v)),Math.cos(phase(v)));if(!i)unwrapped=phase(v);else unwrapped+=wrap(q-prev);prev=q;pts.push([l+(r-l)*i/1440,Y(unwrapped*lambdaMM/(4*Math.PI))]);}path(ctx,pts,C.red,2.5);txt(ctx,'Recovered displacement · 120 samples/s',l,h-4,14,C.muted);txt(ctx,'12 s window',r,h-4,14,C.muted,'right');}
+function updatePhase(){$('depthValue').textContent=`${fixed(S.depth)} mm`;$('phaseValue').innerHTML=`${fixed(720*S.depth/lambdaMM)}<small>degrees</small>`;$('turnValue').textContent=`${fixed(S.depth/(lambdaMM/2),2)} phase turns across this depth`;$('depthFraction').textContent=`Selected motion = ${fixed(S.depth/rangeMM*100,0)}% of one bin`;phaseTrace=recovery(S.depth);drawVisible();}
+function drawSpace(){const {ctx,w,h}=surf('spaceCanvas'),cx=w*.34,radY=h-42,chestY=66,scale=(radY-chestY)/S.distance,cw=.35*scale,bw=footprint(S.distance,S.elements)*scale;
+ txt(ctx,'TOP VIEW',34,25,13,C.muted);labelBracket(ctx,cx-cw/2,cx+cw/2,chestY-21,'35 cm');
+ // All rays below are an illustration of the nominal centre-beam footprint, not beamformed data.
+ const maxAngle=Math.atan(.175/S.distance),theta=2/S.elements;
+ for(let k=-3;k<=3;k++){const angle=k*theta;if(Math.abs(angle)>maxAngle+theta)continue;const a1=angle-theta/2,a2=angle+theta/2;let x1=cx+(radY-chestY)*Math.tan(a1),x2=cx+(radY-chestY)*Math.tan(a2);if(x1<40||x2>w*.67)continue;ctx.fillStyle=k===0?'#1b1b1b':'#101010';ctx.beginPath();ctx.moveTo(cx,radY);ctx.lineTo(x1,chestY);ctx.lineTo(x2,chestY);ctx.closePath();ctx.fill();line(ctx,cx,radY,x1,chestY,k===0?'#ddd':'#444');line(ctx,cx,radY,x2,chestY,k===0?'#ddd':'#444');}
+ ctx.fillStyle='#d0d0d0';ctx.fillRect(cx-cw/2,chestY-3,cw,9);line(ctx,cx,chestY-16,cx,chestY+22,C.red,3);labelBracket(ctx,cx-bw/2,cx+bw/2,chestY+59,`${fixed(footprint(S.distance,S.elements)*100)} cm footprint`);
+ ctx.strokeStyle=C.fg;ctx.strokeRect(cx-24,radY-5,48,22);txt(ctx,`${fixed(S.distance*100,0)} cm`,cx-35,(chestY+radY)/2,18,C.muted,'right',true);txt(ctx,'Radar',cx,radY+41,16,C.fg,'center');
+ const bx=w*.72,by=80,barW=w*.25,barH=60,count=patches(S.distance,S.elements),cellW=barW/count;txt(ctx,'HOW MUCH LATERAL DETAIL?',bx,33,14,C.muted);ctx.fillStyle='#222';ctx.fillRect(bx,by,barW,barH);ctx.save();ctx.beginPath();ctx.rect(bx,by,barW,barH);ctx.clip();for(let i=0;i<count;i++){ctx.fillStyle=i%2?'#626262':'#999';ctx.fillRect(bx+i*cellW+2,by+2,Math.max(0,cellW-4),barH-4);}ctx.restore();line(ctx,bx+barW/2,by-9,bx+barW/2,by+barH+10,C.red,2);txt(ctx,`${fixed(count)} nominal patches`,bx,by+105,28,count<2?C.red:C.fg);txt(ctx,'Not 12 independent image pixels.',bx,by+143,18,C.muted);txt(ctx,'Elevation resolution not modeled.',bx,by+173,18,C.muted);txt(ctx,'Distance slider does not drive the map.',bx,by+203,17,C.muted);}
+function updateSpace(){const n=S.elements,count=patches(S.distance,n);$('distanceValue').textContent=`${fixed(S.distance*100,0)} cm`;$('patchesValue').textContent=fixed(count);$('patchesValue').classList.toggle('red',count<2);$('footprintValue').innerHTML=`${fixed(footprint(S.distance,n)*100)}<small>cm</small>`;$('arraySummary').textContent=`${n} elements · ${fixed(2/n*180/Math.PI)}° nominal resolution`;$('spatialLimit').textContent=`Two-patch boundary: ${fixed(twoPatch(n)*100)} cm`;$('spaceStatus').textContent=count<2?'Below two-patch heuristic':'Above two-patch heuristic';$('spaceStatus').classList.toggle('red',count<2);drawVisible();}
+function motionMetrics(data,time){const pts=data.points.filter(p=>p.t<=time+1e-8);return {rmse:Math.sqrt(pts.reduce((a,p)=>a+p.error*p.error,0)/pts.length),offset:pts.at(-1).error};}
+function updateMotion(){const t=S.motionShown?S.motionTime:0,a=motionMetrics(slow,t),b=motionMetrics(fast,t),shown=S.motionShown;
+ $('slowError').innerHTML=shown?`${fixed(a.rmse,2)}<small>mm</small>`:'—';$('fastError').innerHTML=shown?`${b.rmse<1e-10?'&lt; 10⁻¹⁰':fixed(b.rmse,2)}<small>mm</small>`:'—';$('slowOffset').textContent=shown?`Position offset now: ${fixed(a.offset,2)} mm`:'Computed from recovered samples';$('fastOffset').textContent=shown?`Position offset now: ${fixed(b.offset,2)} mm`:'Same target, same motion, same algorithm';
+ $('motionStatus').textContent=!shown?'Ready · ask the audience to predict':t>=12?'Complete · RMSE over full 12 s':`${fixed(t)} / 12 s · RMSE through current sample`;
