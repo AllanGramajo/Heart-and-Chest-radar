@@ -1,0 +1,50 @@
+name: Build recording and publish website
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chest-radar-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Check out website source
+        uses: actions/checkout@v6
+      - name: Run packaging tests (synthetic software fixtures only)
+        run: python3 -m unittest discover -s tests -v
+      - name: Verify public source, embed recording, and build website
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 build_site.py
+      - name: Check built JavaScript syntax
+        run: python3 tests/check_built_site.py _site/index.html
+      - name: Upload complete website
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Publish verified site
+        id: deployment
+        uses: actions/deploy-pages@v4
