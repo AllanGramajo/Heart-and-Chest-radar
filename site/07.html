@@ -1,0 +1,11 @@
+<script>
+
+(()=>{'use strict';
+const links=[...document.querySelectorAll('.nav-links a')];
+function progress(){const max=document.documentElement.scrollHeight-innerHeight;document.getElementById('scrollProgress').style.width=(max>0?100*scrollY/max:0)+'%';let active=links[0];for(const a of links){const target=document.querySelector(a.getAttribute('href'));if(target&&target.getBoundingClientRect().top<180)active=a;}links.forEach(a=>a.classList.toggle('active',a===active));}
+addEventListener('scroll',progress,{passive:true});addEventListener('resize',progress);document.querySelectorAll('details').forEach(e=>e.addEventListener('toggle',progress));progress();
+document.getElementById('siteFullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch(e){const t=document.getElementById('toast');t.textContent='Fullscreen was blocked here. Use your browser fullscreen command.';t.hidden=false;setTimeout(()=>t.hidden=true,4000);}};
+document.addEventListener('fullscreenchange',()=>{document.getElementById('siteFullscreen').textContent=document.fullscreenElement?'Exit fullscreen':'Fullscreen';});
+})();
+
+</script></body></html>
